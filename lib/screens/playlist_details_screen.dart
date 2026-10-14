@@ -3,17 +3,18 @@ import '../models/playlist.dart';
 import '../models/song.dart';
 import '../services/playlist_storage.dart';
 
-class PlaylistDetailScreen extends StatefulWidget {
+class PlaylistDetailsScreen extends StatefulWidget {
   final Playlist playlist;
 
-  const PlaylistDetailScreen({super.key, required this.playlist});
+  const PlaylistDetailsScreen({super.key, required this.playlist});
 
   @override
-  State<PlaylistDetailScreen> createState() => _PlaylistDetailScreenState();
+  State<PlaylistDetailsScreen> createState() => _PlaylistDetailsScreenState();
 }
 
-class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
+class _PlaylistDetailsScreenState extends State<PlaylistDetailsScreen> {
   late List<Song> _songs;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -73,6 +74,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             ),
             FilledButton(
               onPressed: () async {
+                final navigator = Navigator.of(context);
                 final title = titleController.text.trim();
                 final artist = artistController.text.trim();
 
@@ -89,7 +91,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 });
 
                 await _saveChanges();
-                if (mounted) Navigator.pop(context);
+                if (mounted) navigator.pop();
               },
               child: const Text('Add'),
             ),
@@ -132,6 +134,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             ),
             FilledButton(
               onPressed: () async {
+                final navigator = Navigator.of(context);
                 final title = titleController.text.trim();
                 final artist = artistController.text.trim();
 
@@ -146,7 +149,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 });
 
                 await _saveChanges();
-                if (mounted) Navigator.pop(context);
+                if (mounted) navigator.pop();
               },
               child: const Text('Save'),
             ),
@@ -163,11 +166,91 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     await _saveChanges();
   }
 
+  List<Song> get _filteredSongs {
+    if (_searchQuery.trim().isEmpty) {
+      return _songs;
+    }
+
+    final query = _searchQuery.trim().toLowerCase();
+
+    return _songs.where((song) {
+      return song.title.toLowerCase().contains(query) ||
+          song.artist.toLowerCase().contains(query);
+    }).toList();
+  }
+
+  Widget _buildSongItem(Song song, int index) {
+    return Dismissible(
+      key: Key(song.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: Colors.red,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      onDismissed: (_) => _deleteSong(index),
+      child: Card(
+        child: ListTile(
+          leading: const Icon(Icons.music_note),
+          title: Text(song.title),
+          subtitle: Text(song.artist),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () => _showEditSongDialog(song, index),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => _deleteSong(index),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.playlist.name),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Search songs...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.1),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+            ),
+          ),
+        ),
       ),
       body: _songs.isEmpty
           ? const Center(
@@ -177,42 +260,28 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 style: TextStyle(fontSize: 18),
               ),
             )
-          : ListView.builder(
+          : _searchQuery.trim().isEmpty
+          ? ReorderableListView.builder(
+              onReorder: (oldIndex, newIndex) async {
+                if (newIndex > oldIndex) newIndex -= 1;
+                setState(() {
+                  final song = _songs.removeAt(oldIndex);
+                  _songs.insert(newIndex, song);
+                });
+                await _saveChanges();
+              },
               padding: const EdgeInsets.all(12),
               itemCount: _songs.length,
+              itemBuilder: (context, index) =>
+                  _buildSongItem(_songs[index], index),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: _filteredSongs.length,
               itemBuilder: (context, index) {
-                final song = _songs[index];
-                return Dismissible(
-                  key: Key(song.id),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    color: Colors.red,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 20),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  onDismissed: (_) => _deleteSong(index),
-                  child: Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.music_note),
-                      title: Text(song.title),
-                      subtitle: Text(song.artist),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined),
-                            onPressed: () => _showEditSongDialog(song, index),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _deleteSong(index),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
+                final song = _filteredSongs[index];
+                final songIndex = _songs.indexOf(song);
+                return _buildSongItem(song, songIndex);
               },
             ),
       floatingActionButton: FloatingActionButton(
